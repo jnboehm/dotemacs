@@ -1,0 +1,688 @@
+  #+TITLE:Emacs Config
+  #+AUTHOR:J. N. Böhm
+
+#+PROPERTY: header-args:emacs-lisp  :tangle yes
+
+  This is my new Emacs' init file. Using org-mode I hope to organize my
+  thoughts and configuration of packages and other stuff properly so I,
+  myself, can understand what I wanted to accomplish when I wrote all this.
+
+  Orgmode is one of the most important modes to me. It's actually already
+  configured in the file that loaded this one because you need org to
+  tangle the source code blocks.  The same goes for use-package; I loaded
+  it up as well to be able to use its' syntax for orgmode.
+
+* Installing
+  I am not really using anything other than GNU/Linux at the moment so I
+  cannot really specify how I'd want to install Emacs on other operating
+  systems (if I was to do this at all). Anyways, for Arch Linux the
+  appropiate command is
+
+#+BEGIN_SRC sh :tangle no
+  sudo pacman -S emacs
+#+END_SRC
+
+* use package
+
+#+BEGIN_SRC emacs-lisp
+  (require 'use-package)
+#+END_SRC
+
+* Packages
+
+  This block tests whether or not the connection is checking the
+  certificates that are presented to Emacs.  It obviously should not
+  present an error when it's executed.  I find it too much to test
+  this every time I start up Emacs and I may not even be connected to
+  the internet so it's not tangled by default.  The inspiration for
+  this stems from [[https://glyph.twistedmatrix.com/2015/11/editor-malware.html][this]].
+
+  #+BEGIN_SRC emacs-lisp :tangle no
+    (setq tls-checktrust 'ask)
+    (let ((trustfile
+           (replace-regexp-in-string
+            "\\\\" "/"
+            (replace-regexp-in-string
+             "\n" ""
+             (shell-command-to-string "python -m certifi")))))
+      (setq tls-program
+            (list
+             (format "gnutls-cli%s --x509cafile %s -p %%p %%h"
+                     (if (eq window-system 'w32) ".exe" "") trustfile))
+            gnutls-verify-error t
+            gnutls-trustfiles (list trustfile)))
+  #+END_SRC
+
+#+BEGIN_SRC emacs-lisp :tangle no
+    (if (condition-case e
+            (progn
+              (url-retrieve "https://wrong.host.badssl.com/"
+                            (lambda (retrieved) t))
+              (url-retrieve "https://self-signed.badssl.com/"
+                            (lambda (retrieved) t))
+              t)
+          ('error nil))
+        (error "tls misconfigured")
+      (url-retrieve "https://badssl.com"
+                    (lambda (retrieved) t)))
+  #+END_SRC
+
+* Package manager
+  The package manager is pretty sweet by itself but I want another
+  repository which is – in my opinion – more up to date.  I do want to
+  use https, unfortunately [[orgmode.org]] does not offer it.  To be
+  hones, I am not using the latest version anyways but it still is a
+  bummer.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package package
+      :config
+      (setq package-archives nil)
+      (push '("gnu" . "https://elpa.gnu.org/packages/")
+            package-archives)
+      (push '("melpa" . "https://melpa.milkbox.net/packages/")
+            package-archives)
+      (package-initialize))
+  #+END_SRC
+
+* Orgmode
+  This is a very important mode, it makes this file possible and helps
+  outlining, organizing, planning, etc. Not in this file since I just
+  require org in my init file.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package org
+      :ensure t
+      :init
+      (setq org-image-actual-width 400
+            org-pretty-entities 1
+            org-src-fontify-natively t
+            org-ellipsis "⤵"
+            org-latex-create-formula-image-program 'imagemagick)
+      (org-babel-do-load-languages
+       'org-babel-load-languages
+       '(; (perl . t)
+         (sh . t)
+         (C . t)
+         (java . t)
+         (python . t)
+         (latex . t)
+         (emacs-lisp . t)))
+      (use-package org-bullets
+        :init
+        (add-hook 'org-mode-hook (lambda () (org-bullets-mode 1)))
+        (setq org-bullets-bullet-list '("✸")))
+      :bind
+      (("C-c l" . org-store-link)
+       ("C-c a" . org-agenda)
+       ("C-c b" . org-iswitchb)
+       ("C-c n" . org-footnote-new)))
+  #+END_SRC
+
+** TODO split up the agenda files
+   into stuff like “hsrm”, “lb”, and ???
+** TODO org-sync
+
+* Backups
+  The backup files are annoying and cluttering up the directories
+  where my files are being edited. But instead of simply disabling
+  them I'd rather store them away so I can recover them should I ever
+  have the need to. Fortunately it hasn't come this far as of now. I
+  also enable some version control so there is more than one backup
+  file.
+
+  #+BEGIN_SRC emacs-lisp
+    (setq make-backup-files t
+          version-control t
+          backup-directory-alist '(("." . "~/.saves"))
+          backup-by-copying-when-linked t
+          delete-old-versions t
+          kept-new-versions 6
+          kept-old-versions 2
+          version-control t)
+  #+END_SRC
+
+* Visual
+
+** Font & Theme
+  I currently really like the material theme and the Source Code
+  font. Since I run Emacs as a server I have to reload the font and the
+  theme every time a new frame is created. You have to delay the theme and
+  the font until after you have the window because the server does not
+  interpret the init file every time you call emacsclient (which is one of
+  the key reasons why I like to run it as a server).
+
+  This function is called automatically after the frame was created so you
+  still get the font that you want instead of the system default.
+
+#+BEGIN_SRC emacs-lisp
+  (defun load-appearance (frame)
+    (select-frame frame)
+    (set-frame-font "SourceCodePro-10.5:style=Regular" nil)
+    (use-package material-theme
+      :ensure t
+      :config
+      (load-theme 'material t)))
+
+  (add-hook 'after-make-frame-functions #'load-appearance)
+#+END_SRC
+
+** Golden ratio
+   I really like the way the golden ratio decides to split up my
+   buffers.  Also do not display its' name in the minor-mode bar.  But
+   it kind of inhibits me form focusing on more than one panel at a
+   time.  Anyways, most buffers that pop up adjust sensibly to the
+   available space in my opinion, so it's disabled for now.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package golden-ratio
+    :disabled t
+    :init
+    (setq golden-ratio-exclude-modes '("calc-mode" "calc-trail-mode" "calendar-mode" "minimap-mode"))
+    :config
+    (golden-ratio-mode)
+    :diminish golden-ratio-mode)
+#+END_SRC
+
+** Show Parentheses
+   Yes, I do want to see the matching paren highlighted.
+
+#+BEGIN_SRC emacs-lisp
+  (show-paren-mode t)
+#+END_SRC
+
+** Highlight current line
+   This makes finding one's own point tremendiously easier.
+
+#+BEGIN_SRC emacs-lisp
+  (global-hl-line-mode +1)
+#+END_SRC
+
+* Avy
+  I use avy to occasionally jump around in the buffer. I am just
+  starting to get used to it so I have a rather weird keybind for
+  it. I create my own keymap for this as some kind of name space. The
+  'ö' is easily available to me on a german keyboard.
+
+  The `replace-regexp' is listed here as well since I find it
+  convenient and I know it won't interfere with any other keys.
+
+#+BEGIN_SRC emacs-lisp
+  (define-prefix-command 'avy-map)
+  (global-set-key (kbd "C-ö")
+                  'avy-map)
+  (use-package avy
+    :ensure t
+    :bind
+    ("C-ö s" . replace-regexp)
+    ("C-ö v" . avy-goto-char-2)
+    ("C-ö f" . avy-goto-char-in-line)
+    ("C-ö c" . avy-goto-char)
+    ("C-ö w" . avy-goto-word-1)
+    ("C-ö l" . avy-goto-line))
+#+END_SRC
+
+* Flycheck
+  This mode is great, it automatically checks for syntax errors and
+  other stuff wrong with my files/code. It's only kinda annoying when
+  he gets pedantic on my snippets with the lack of customary headers
+  and footers for example in emacs-lisp code.  It's set up to only get
+  enabled when I am in =prog-mode= so I don't have to see the minor
+  mode label all the time (and because of efficiency and yadda,
+  yadda).
+
+
+  #+BEGIN_SRC emacs-lisp
+    (add-hook 'prog-mode-hook #'flycheck-mode)
+  #+END_SRC
+
+** TODO change the font for flycheck error font
+   Also disable it when in an orgmode buffer
+
+  #+BEGIN_SRC emacs-lisp :tangle no
+      (global-font-lock-mode t)
+    (custom-set-faces
+      '(flycheck-error ((t (:inverse-video t)))))
+    ;;  (set-face-attribute 'flyspell-incorrect (t (:inverse-video t)))
+
+  #+END_SRC
+
+** Enable JSLint for flycheck
+   :tangle config.el
+
+   I don't really want this every time I start emacs.  We have to use
+   JSLint so I've set it up here.  For some reason it does not accept
+   my command-line arguments for parsing it.
+
+#+BEGIN_SRC emacs-lisp :tangle no
+    (flycheck-define-checker javascript-jslint-reporter
+      "A JavaScript syntax and style checker based on JSLint Reporter.
+
+    See URL `https://github.com/FND/jslint-reporter'."
+      :command ("~/.emacs.d/misc/jslint-reporter/jslint-reporter" "--browser" "--predef=document" "--for=true" "--browser=true" "--this=true" "--devel=true" "--fudge=true" source)
+      :error-patterns
+      ((error line-start (0+ nonl) ":" line ":" column ":" (message) line-end))
+      :modes (js-mode js2-mode js3-mode))
+    (add-hook 'js-mode-hook (lambda ()
+                              (flycheck-select-checker 'javascript-jslint-reporter)))
+#+END_SRC
+
+* Hydra
+  The hydra package makes it more comfortable to trigger commands
+  multiple times.  The goto example is increasing the font size, which
+  is currently the only thing I use it for, although it would be
+  possible to create something like a slim vi layer or make the undo
+  stack easily accessible.  Another option would be to open up the
+  tree navigation in orgmode via "C-c" or something like that.
+
+  For some reason it does not work with the outline-minor-mode
+  enabled.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package hydra
+    :ensure t
+    :config
+    (defhydra hydra-scroll-other-window (global-map "C-M-v")
+      "scroll the other window without switchting over to it."
+      ("n" (scroll-other-window 5) "forward")
+      ("p" (scroll-other-window -5) "backward"))
+    (defhydra hydra-outline (:color pink :hint nil)
+      "
+  ^Hide^             ^Show^           ^Move
+  ^^^^^^------------------------------------------------------
+  _q_: sublevels     _a_: all         _u_: up
+  _t_: body          _e_: entry       _n_: next visible
+  _o_: other         _i_: children    _p_: previous visible
+  _c_: entry         _k_: branches    _f_: forward same level
+  _l_: leaves        _s_: subtree     _b_: backward same level
+  _d_: subtree
+
+  "
+      ;; Hide
+      ("q" hide-sublevels)    ; Hide everything but the top-level headings
+      ("t" hide-body)         ; Hide everything but headings (all body lines)
+      ("o" hide-other)        ; Hide other branches
+      ("c" hide-entry)        ; Hide this entry's body
+      ("l" hide-leaves)       ; Hide body lines in this entry and sub-entries
+      ("d" hide-subtree)      ; Hide everything in this entry and sub-entries
+      ;; Show
+      ("a" show-all)          ; Show (expand) everything
+      ("e" show-entry)        ; Show this heading's body
+      ("i" show-children)     ; Show this heading's immediate child sub-headings
+      ("k" show-branches)     ; Show all sub-headings under this heading
+      ("s" show-subtree)      ; Show (expand) everything in this heading & below
+      ;; Move
+      ("u" outline-up-heading)                ; Up
+      ("n" outline-next-visible-heading)      ; Next
+      ("p" outline-previous-visible-heading)  ; Previous
+      ("f" outline-forward-same-level)        ; Forward - same level
+      ("b" outline-backward-same-level)       ; Backward - same level
+      ("z" nil "leave"))
+
+    (global-set-key (kbd "C-c #") 'hydra-outline/body)) ; by example
+#+END_SRC
+
+* erc
+  I use erc for the little stuff I do in IRC.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package erc
+      :defer t
+      :config
+      (setq erc-fill-static-center 13
+            erc-fill-function 'erc-fill-static))
+  #+END_SRC
+
+* TODO ctags
+  Get some tagging going, someone suggested ctags as a back end to
+  gtags, which sounds quite nice. But I still am kinda lost when it
+  comes to this topic.  There was also a really sweet [[https://www.youtube.com/watch?v%3D5FQwQ0QWBTU][talk]] at CPPcon,
+  where Atila Neves described a package to make Emacs aware of the
+  configs in CMake/Makefiles.  This sounds really sweet.
+
+* ido
+  I am currently using ido which makes it a whole lot easier to find
+  files and switch buffers. Maybe I will abandon it for helm though,
+  as that has some promising features.
+
+#+BEGIN_SRC emacs-lisp :tangle no
+  (use-package ido-completing-read+)
+  (use-package ido-ubiquitous
+    :config
+    (ido-mode))
+  (use-package ido-vertical-mode
+    :config
+    (ido-vertical-mode))
+#+END_SRC
+
+* helm
+  This is more or less work-in-progress as I am not really sure if I
+  am actually understanding the helm-mode or not. There are so many
+  packages for seemingly every mode you can enable.  There is a pretty
+  sweet [[http://tuhdo.github.io/c-ide.html][guide for C development]] from the author of this package.
+  Check out the talk linked to in the [[ctags]] entry?
+
+  I am more inclined to actually try helm out, but I don't know when
+  I'll have the time to properly set it up.  I may switch to
+  company-mode for completion – it seems to be the default completion
+  engine when using helm-mode.  I've now switched to helm and I quite
+  like it so far.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package helm
+      :ensure t
+      :init
+      (helm-mode 1)
+      :config
+      (setq helm-ff-skip-boring-files t
+            helm-split-window-in-side-p t)
+;      (ido-mode -1)
+      :diminish (helm-mode)
+      :bind
+      (("M-y" . helm-show-kill-ring)))
+  #+END_SRC
+
+* pdf-tools
+  pdfview is awesome, it looks way better than docview.
+
+ #+BEGIN_SRC emacs-lisp
+   (use-package pdf-tools
+     :ensure t
+     :config
+     (pdf-tools-install))
+ #+END_SRC
+
+** TODO Set up synctex properly
+
+* Windmove
+  To make it easier to switch buffers with the keyboard. We also try
+  to make it play nice with org-mode as this is a central aspect of my
+  time in Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package windmove
+    :ensure t
+    :config
+    (windmove-default-keybindings))
+
+  (setq org-support-shift-select 't)
+  (add-hook 'org-shiftup-final-hook 'windmove-up)
+  (add-hook 'org-shiftleft-final-hook 'windmove-left)
+  (add-hook 'org-shiftdown-final-hook 'windmove-down)
+  (add-hook 'org-shiftright-final-hook 'windmove-right)
+#+END_SRC
+
+* Autocompletion
+  For now I use auto-complete bt there are some alternatives which I
+  haven't really checked out so far.  One example would be company but
+  I don't know yet what's better.  What I am using currently works
+  good enough in my opinion but I'll have to revise that in the
+  future.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package auto-complete
+    :ensure t
+    :diminish auto-complete-mode
+    :config
+    (use-package auto-complete-config
+      :config (ac-config-default)))
+#+END_SRC
+
+* Snippets
+  Snippets are aweseome! I use yasnippet for it
+
+#+BEGIN_SRC emacs-lisp
+  (use-package yasnippet
+    :config
+    (yas-global-mode 1)
+    :diminish
+    yas-minor-mode)
+#+END_SRC
+
+* Mode bar
+  I use power bar which is just personal preference I also want to have the
+  line and column number displayed.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package powerline
+      :init
+      (line-number-mode 1)
+      (column-number-mode 1)
+      :config
+      (powerline-default-theme))
+  #+END_SRC
+
+* Evil
+  I currently do not use evil-mode. Should I change my mind later on; this
+  should enable it if the second line is removed.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package evil
+      :disabled t
+      :ensure t
+      :config (evil-mode 1))
+  #+END_SRC
+
+* Eshell
+  Currently not working.  The command mutt is not appended to the list
+  properly and the list does not exist when Emacs starts.
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package eshell
+      :disabled t
+      :commands
+      (eshell)
+      :config
+      (push "mutt" eshell-visual-commands))
+  #+END_SRC
+
+* Disabled commands
+  Some commands that are disabled kind of make sense (I don't even
+  know all of them), but I want to have these:
+
+  #+BEGIN_SRC emacs-lisp
+    (put 'narrow-to-defun  'disabled nil)
+    (put 'narrow-to-page   'disabled nil)
+    (put 'narrow-to-region 'disabled nil)
+  #+END_SRC
+
+* Julia
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package julia-mode
+      :defer t
+      :ensure t
+      :config
+      (use-package julia-shell
+        :ensure t))
+    (add-hook 'julia-mode-hook (lambda ()
+                                (define-key julia-mode-map (kbd "C-x C-e") 'julia-shell-run-region-or-line)))
+  #+END_SRC
+
+* Misc
+
+** Test
+   A little snippet to change how C-w works.  It will either kill a
+   word backwards or the region, should one be selected.
+
+   #+BEGIN_SRC emacs-lisp
+     (defun kill-region-or-word (arg)
+       "Call `kill-region' or `backward-kill-word' depending on whether or not a region is selected.
+     With number ARG pass those as argument to `backward-kill-word'.
+     With non-nil non-number ARG make `kill-region' even if region is not selected."
+       (interactive "P")
+       (cond
+        ((or (and transient-mark-mode mark-active) (and arg (listp arg)))
+         (kill-region (point) (mark)))
+        ((numberp arg) (backward-kill-word arg))
+        ((eq arg '-) (backward-kill-word -1))
+        (t (backward-kill-word 1))))
+
+     (global-set-key "\C-w" 'kill-region-or-word)
+   #+END_SRC
+
+** VRML
+   I have to use the Virtual Reality Modelling Language for my
+   computer graphics course.  This part is fortunately finished so I
+   do not need it for now.
+
+   #+BEGIN_SRC emacs-lisp :tangle no :results silent
+     (load-file (expand-file-name "~/.emacs.d/misc/vrml-mode.el"))
+     (add-to-list 'auto-mode-alist '("\\.wrl\\'" . vrml-mode))
+   #+END_SRC
+
+** Yes or No
+  I want to type out neither yes nor no for „important“ questions.
+
+#+BEGIN_SRC emacs-lisp
+  (defalias 'yes-or-no-p 'y-or-n-p)
+#+END_SRC
+
+** Initializing registers
+   I don't want to have to type too much to access those files, since
+   they're often openend for a quick edit.  So far it's only this file
+   but I really like the fact that you can save files into registers.
+   To open it type =C-x r j i=, where ~i~ is my register set up just below.
+
+   #+BEGIN_SRC emacs-lisp
+     (set-register ?i '(file . "~/.emacs.d/config.org"))
+   #+END_SRC
+
+** Trailing Whitespace
+   I want to delete Trailing Whitespace every time I save my file so
+   it does not get into my way.  This is especially helpful when a
+   statement was deleted but the indentation was not.
+
+   #+BEGIN_SRC emacs-lisp
+     (add-hook 'before-save-hook 'delete-trailing-whitespace)
+   #+END_SRC
+
+** Menu & Scroll bar
+   This is straight forward: I do not want to have the menu bar and
+   the scroll bar. Oh, and the tool bar as well.
+
+#+BEGIN_SRC emacs-lisp
+  (tool-bar-mode -1)
+  (menu-bar-mode -1)
+  (scroll-bar-mode -1)
+#+END_SRC
+
+** Lockfiles
+   I do not want lock files.
+
+#+BEGIN_SRC emacs-lisp
+  (setq create-lockfiles nil)
+#+END_SRC
+
+** Keystrokes in echo area
+   I really like faster feed back from what I have typed so far. It's
+   nice when I don't know whether I really pressed the key or not,
+   although it does not produce iritating symbols when executing a
+   normal key sequence.
+
+#+BEGIN_SRC emacs-lisp
+  (setq echo-keystrokes 0.2)
+#+END_SRC
+
+** Mouse wheel support
+   I don't recall why exactly I have this line in my config, but if I had
+   to guess it's for pasting via the middle mouse and I do not want to miss
+   that feature.
+
+#+BEGIN_SRC emacs-lisp
+  (mouse-wheel-mode t)
+#+END_SRC
+
+** Scrolling and tabs
+   Just some preferences. The default scrolling is horrid and I like spaces
+   for indenting more.
+
+#+BEGIN_SRC emacs-lisp
+  (setq scroll-step 1
+        scroll-conservatively 10000
+        tab-width 4)
+  (setq-default indent-tabs-mode nil)
+#+END_SRC
+
+** Frame title
+   I like the alternative, shell-like title more. If I have too much
+   time on my hands I can try to substitute the defvar with something
+   else that doesn't generate an error during startup.
+
+#+BEGIN_SRC emacs-lisp
+  (defvar jnb-hostname (substring (system-name) 0
+                            (string-match "\\..+" (system-name))))
+  (setq frame-title-format
+        '("" invocation-name "@" jnb-hostname ": %b"))
+#+END_SRC
+
+** Indenting in C
+   For some reason the default style in C is GNU, which kind of makes
+   sense, but I personally dislike it.
+
+#+BEGIN_SRC emacs-lisp
+  (setq c-default-style "linux"
+        c-basic-offset 4)
+#+END_SRC
+
+** File editing with sudo
+   If I cannot write to the file I'll be presented the option to enter
+   my sudo password and override the read-only.  Currently not getting
+   tangled since it's annoying when in dired-mode. I have to rewrite
+   this so it asks me first if I want to use sudo.  I actually don't
+   really want to use this since I ahve to abort it when I only want
+   to read some file that's only allows reading by default.
+
+   Oh, and you can toggle read only on and off by hitting =C-x C-q=.
+   Maybe I should look for a function that tries to access the file
+   with sudo rights when I try to toggle read only and I am not
+   allowed to do so.
+
+#+BEGIN_SRC emacs-lisp :tangle no
+  (defadvice find-file (after find-file-sudo activate)
+    "Find file as root if necessary."
+    (unless (and buffer-file-name
+                 (file-writable-p buffer-file-name))
+      (find-alternate-file (concat "/sudo:root@localhost:" buffer-file-name))))
+#+END_SRC
+
+** Mail with mutt
+   As long as I use mutt I'll want this so the mail mode is
+   automatically invoked when reading or writing mails for mutt.
+
+#+BEGIN_SRC emacs-lisp
+  (setq auto-mode-alist (append '(("/tmp/mutt.*" . mail-mode)) auto-mode-alist))
+#+END_SRC
+
+** Minimap
+   I want to try out the minimap mode, it looks kinda fun.  It does
+   not work nicely with golden ratio mode (although that's disabled,
+   too).  I've disabled the minimap as of now since I do not have the
+   spare screen space and don't want to unnecessarily waste any.
+
+   #+BEGIN_SRC emacs-lisp :tangle no
+     (use-package minimap
+       :disabled t
+       :config
+       (minimap-mode))
+   #+END_SRC
+
+** MIPS Assembler
+   Running this snippet simply set the # as the comment character so I
+   can write assembly code for the mips assembly language.  I don't
+   know how often I need to write assembly code (especially MIPS!) so
+   it's not set up in my defaults.
+
+#+BEGIN_SRC emacs-lisp :tangle no :results silent
+  (setq asm-comment-char '?#)
+#+END_SRC
+
+** Garbage collection
+   We will increase the size until the garbage collection kicks in so
+   it does not have to run as often.  This should speed up some
+   memory-heavy operations.
+
+   #+BEGIN_SRC emacs-lisp
+     (setq gc-cons-threshold 20000000)
+   #+END_SRC
+   This line intentionally left blank.
